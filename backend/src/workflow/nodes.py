@@ -1,24 +1,66 @@
 from ..tools.google.google_search import google_search
 from ..tools.search_sys.bing import bing
-from ..tools.reddit_comments import fetch_reddit_posts, get_all_comments
 from ..tools.google.google_finance import google_finance
+from ..tools.search_sys.yfinance  import main
 from .state import ResearchState
 from ..config.model import Model
+from ..config.str_outputs import QueryClassifier
+from ..tools.reddit_comments import reddit
 import asyncio
 from ..config.setup_logs import logger
 
 
 llm=Model().set_model()
 
+
 async def init_search(state: ResearchState):
-    """
-    Initializes the search process by taking the user's question.
-    """
     logger.info("---INITIATING RESEARCH---")
     user_question = state.get("user_question")
     if user_question is None:
         raise ValueError("User question not found in the state.")
     return {"user_question": user_question}
+
+async def classify_question_node(state: ResearchState):
+    """
+    Classifies the user's question as either 'finance' or 'general'.
+    """
+    logger.info("---CLASSIFYING USER QUESTION---")
+    user_question = state["user_question"]
+
+    if not user_question:
+        raise ValueError("User question not found in the state.")
+    
+    prompt = f"""
+    You are an advanced language model specializing in categorizing user queries for a multi-domain research assistant platform.
+
+    Your task: Carefully analyze the provided user query and classify it into one of the following predefined categories:
+      1. 'finance': The query is primarily about financial matters such as stock prices, company financials, economic indicators, investment strategies, market trends, or financial news if the question mentions anything about the company  is a finance.
+      2. 'general': The query covers any topic unrelated to finance, such as science, history, technology, entertainment, or other general knowledge domains.
+      3. 'finance and general': The query contains both financial and non-financial (general) aspects within a single sentence or topic.
+
+    Guidelines:
+      - Base your classification solely on the query's content and intent.
+      - Consider nuances in language that may combine financial and general interests.
+      - Your answer must be a single label (exactly 'finance', 'general', or 'finance and general') with no additional commentary.
+      - This classification will be used by an automated workflow to determine subsequent research steps and agent routing, so accuracy and precision are vital.
+
+    User Query: "{user_question}"
+    """
+    
+    try:
+        # Create a structured output LLM
+        structured_llm = llm.with_structured_output(QueryClassifier)
+        
+        # Invoke the LLM
+        classification_result = await structured_llm.ainvoke(prompt)
+        
+        logger.info(f"Query classified as: {classification_result.query_type}")
+        
+        # Update the state
+        return {"query_type": classification_result.query_type}
+        
+    except Exception as e:
+        logger.error(f"Error during classification: {e}")
 
 async def google_search_node(state: ResearchState):
     """
@@ -44,8 +86,7 @@ async def reddit_search_node(state: ResearchState):
     Performs a Reddit search and updates the state with the results.
     """
     logger.info("---PERFORMING REDDIT SEARCH---")
-    await fetch_reddit_posts() # Populate cache
-    reddit_results = await get_all_comments() # Get all comments from cache
+    reddit_results = await reddit() # Get all comments from cache
     return {"reddit_search_results": reddit_results}
 
 async def yahoo_finance_node(state: ResearchState):
@@ -54,8 +95,17 @@ async def yahoo_finance_node(state: ResearchState):
     """
     logger.info("---PERFORMING YAHOO FINANCE SEARCH---")
     query = state["user_question"]
-    yahoo_results = await google_finance(query)
+    yahoo_results = await main(query)
     return {"yahoo_finance_results": yahoo_results}
+
+async def google_search_node(state:ResearchState):
+    """
+    performs search using google finance tool
+    """
+    logger.info("---PERFORMING GOOGLE SEARCH---")
+    query = state["user_question"]
+    google_results = await google_search(query)
+    return {"google_search_results": google_results}
 
 async def google_search_analysis_node(state: ResearchState):
     logger.info("---ANALYZING GOOGLE SEARCH RESULTS---")
