@@ -7,6 +7,8 @@ from src.config.str_outputs import Report
 
 llm=model.set_model()
 
+prompt=yaml_load('report_making_agent')
+
 async def reporting_agent(content:str):
     """
     This function is responsible for generating a report based on the provided content.
@@ -21,7 +23,7 @@ async def reporting_agent(content:str):
         logger.info("Generating report...")
 
         report_making_agent = create_agent(
-            prompt=yaml_load('report_making_agent'),
+            prompt=prompt,
             model=llm,
             tools=[],
             response_format=Report

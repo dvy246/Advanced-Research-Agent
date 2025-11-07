@@ -1,16 +1,9 @@
 from langgraph.graph import StateGraph, END
-from .state import ResearchState
-from .nodes import (
-    init_search,
-    google_search_node,
-    bing_search_node,
-    reddit_search_node,
-    yahoo_finance_node,
-    research_analyst_node,
-    report_writing_node,
-)
+from src.workflow.state import ResearchState
+from src.workflow.nodes import (google_search,bing_search,reddit_search)
+from langgraph.checkpoint.
 
-def create_workflow():
+async def create_workflow():
     """
     Creates the research workflow graph.
 
@@ -42,4 +35,4 @@ def create_workflow():
 
     # Compile the graph
     graph = workflow.compile()
-    return graph
+    return graph  

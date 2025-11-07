@@ -1,16 +1,23 @@
-from typing import TypedDict, List, Optional
+from typing import TypedDict, List, Optional, Annotated
+from langgraph.graph.message import add_messages
 
 class ResearchState(TypedDict):
     """
     Represents the state of the research workflow.
-
-    Attributes:
-        query (str): The initial research query.
-        report (str): The final research report.
-        search_results (List[dict]): A list of search results from various sources.
-        analysis (Optional[str]): The analysis of the search results.
     """
-    query: str
-    report: str
-    search_results: List[dict]
-    analysis: Optional[str]
+    messages: Annotated[list, add_messages]
+    user_question: str
+    google_search_results: Optional[str]
+    google_finance_results: Optional[str]
+    bing_search_results: Optional[str]
+    reddit_search_results: Optional[str]
+    selected_reddit_urls: Optional[List[str]]
+    reddit_posts: Optional[str]
+    google_analysis: Optional[str]
+    bing_analysis: Optional[str]
+    reddit_analysis: Optional[str]
+    google_finance_analysis: Optional[str]
+    synthesized_answer: Optional[str]
+    report: Optional[str]
+    major_highlights: Optional[str]
+    final_report: Optional[str]

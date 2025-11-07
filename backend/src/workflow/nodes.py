@@ -1,153 +1,237 @@
-
 from ..tools.google.google_search import google_search
 from ..tools.search_sys.bing import bing
-from ..tools.reddit_comments import fetch_reddit_posts
+from ..tools.reddit_comments import fetch_reddit_posts, get_all_comments
 from ..tools.google.google_finance import google_finance
 from .state import ResearchState
 from ..config.model import Model
 import asyncio
+from ..config.setup_logs import logger
+
+
+llm=Model().set_model()
 
 async def init_search(state: ResearchState):
     """
-    Initializes the search process by taking the user's query.
-    
-    Args:
-        state (ResearchState): The current state of the workflow.
-        
-    Returns:
-        ResearchState: The updated state with the query.
+    Initializes the search process by taking the user's question.
     """
-    print("---INITIATING RESEARCH---")
-    query = state.get("query")
-    if query is None:
-        raise ValueError("Query not found in the state.")
-    return {"query": query}
+    logger.info("---INITIATING RESEARCH---")
+    user_question = state.get("user_question")
+    if user_question is None:
+        raise ValueError("User question not found in the state.")
+    return {"user_question": user_question}
 
 async def google_search_node(state: ResearchState):
     """
     Performs a Google search and updates the state with the results.
-    
-    Args:
-        state (ResearchState): The current state of the workflow.
-        
-    Returns:
-        ResearchState: The updated state with Google search results.
     """
-    print("---PERFORMING GOOGLE SEARCH---")
-    query = state["query"]
-    loop = asyncio.get_event_loop()
-    google_results = await loop.run_in_executor(None, asyncio.run, google_search(query))
-    return {"search_results": google_results}
+    logger.info("---PERFORMING GOOGLE SEARCH---")
+    query = state["user_question"]
+    google_results = await google_search(query)
+    return {"google_search_results": google_results}
+
 
 async def bing_search_node(state: ResearchState):
     """
     Performs a Bing search and updates the state with the results.
-    
-    Args:
-        state (ResearchState): The current state of the workflow.
-        
-    Returns:
-        ResearchState: The updated state with Bing search results.
     """
-    print("---PERFORMING BING SEARCH---")
-    query = state["query"]
-    loop = asyncio.get_event_loop()
-    bing_results = await loop.run_in_executor(None, asyncio.run, bing(query))
-    # Append results to existing search_results
-    current_results = state.get("search_results", [])
-    current_results.extend(bing_results)
-    return {"search_results": current_results}
+    logger.info("---PERFORMING BING SEARCH---")
+    query = state["user_question"]
+    bing_results = await bing(query)
+    return {"bing_search_results": bing_results}
 
 async def reddit_search_node(state: ResearchState):
     """
     Performs a Reddit search and updates the state with the results.
-    
-    Args:
-        state (ResearchState): The current state of the workflow.
-        
-    Returns:
-        ResearchState: The updated state with Reddit search results.
     """
-    print("---PERFORMING REDDIT SEARCH---")
-    loop = asyncio.get_event_loop()
-    reddit_results = await loop.run_in_executor(None, asyncio.run, fetch_reddit_posts())
-    current_results = state.get("search_results", [])
-    current_results.extend(reddit_results)
-    return {"search_results": current_results}
+    logger.info("---PERFORMING REDDIT SEARCH---")
+    await fetch_reddit_posts() # Populate cache
+    reddit_results = await get_all_comments() # Get all comments from cache
+    return {"reddit_search_results": reddit_results}
 
 async def yahoo_finance_node(state: ResearchState):
     """
-    Performs a Yahoo Finance search and updates the state with the results.
-    
-    Args:
-        state (ResearchState): The current state of the workflow.
-        
-    Returns:
-        ResearchState: The updated state with Yahoo Finance search results.
+    Performs a Yahoo Finance search (using google_finance tool) and updates the state with the results.
     """
-    print("---PERFORMING YAHOO FINANCE SEARCH---")
-    query = state["query"]
-    loop = asyncio.get_event_loop()
-    yahoo_results = await loop.run_in_executor(None, asyncio.run, google_finance(query))
-    current_results = state.get("search_results", [])
-    current_results.extend(yahoo_results)
-    return {"search_results": current_results}
+    logger.info("---PERFORMING YAHOO FINANCE SEARCH---")
+    query = state["user_question"]
+    yahoo_results = await google_finance(query)
+    return {"yahoo_finance_results": yahoo_results}
 
-async def research_analyst_node(state: ResearchState):
-    """
-    Analyzes the search results and generates an analysis.
-    
-    Args:
-        state (ResearchState): The current state of the workflow.
-        
-    Returns:
-        ResearchState: The updated state with the analysis.
-    """
-    print("---ANALYZING SEARCH RESULTS---")
-    query = state["query"]
-    search_results = state["search_results"]
-    
-    model = Model()
-    llm = model.set_model()
-    
-    prompt = f"""Analyze the following search results for the query: {query}
+async def google_search_analysis_node(state: ResearchState):
+    logger.info("---ANALYZING GOOGLE SEARCH RESULTS---")
+    user_question = state["user_question"]
+    google_results = state["google_search_results"]
+    prompt = f"""Analyze the following Google search results for the query: {user_question}
 
     Search Results:
-    {search_results}
+    {google_results}
 
-    Provide a detailed analysis of the search results.
+    Provide a detailed analysis of the Google search results.
+    """
+    analysis = await llm.ainvoke(prompt)
+    return {"google_analysis": analysis.content}
+
+async def bing_search_analysis_node(state: ResearchState):
+    logger.info("---ANALYZING BING SEARCH RESULTS---")
+    user_question = state["user_question"]
+    bing_results = state["bing_search_results"]
+    prompt = f"""Analyze the following Bing search results for the query: {user_question}
+
+    Search Results:
+    {bing_results}
+
+    Provide a detailed analysis of the Bing search results.
+    """
+    analysis = await llm.ainvoke(prompt)
+    return {"bing_analysis": analysis.content}
+
+async def reddit_comments_analysis_node(state: ResearchState):
+    logger.info("---ANALYZING REDDIT COMMENTS---")
+    user_question = state["user_question"]
+    reddit_results = state["reddit_search_results"]
+    prompt = f"""Analyze the following Reddit comments for the query: {user_question}
+
+    Reddit Comments:
+    {reddit_results}
+
+    Provide a detailed analysis of the Reddit comments, focusing on sentiment, key topics, and common opinions.
+    """
+    analysis = await llm.ainvoke(prompt)
+    return {"reddit_analysis": analysis.content}
+
+async def yahoo_finance_analysis_node(state: ResearchState):
+    logger.info("---ANALYZING YAHOO FINANCE DATA---")
+    user_question = state["user_question"]
+    finance_results = state["yahoo_finance_results"]
+    prompt = f"""Analyze the following Yahoo Finance data for the query: {user_question}
+
+    Yahoo Finance Data:
+    {finance_results}
+
+    Provide a detailed analysis of the financial data, focusing on key metrics, trends, and potential implications.
+    """
+    analysis = await llm.ainvoke(prompt)
+    return {"yahoo_finance_analysis": analysis.content}
+
+async def google_finance_analysis_node(state: ResearchState):
+    logger.info("---ANALYZING GOOGLE FINANCE DATA---")
+    user_question = state["user_question"]
+    finance_results = state["google_finance_results"]
+    prompt = f"""Analyze the following Google Finance data for the query: {user_question}
+
+    Google Finance Data:
+    {finance_results}
+
+    Provide a detailed analysis of the financial data, focusing on key metrics, trends, and potential implications.
+    """
+    analysis = await llm.ainvoke(prompt)
+    return {"google_finance_analysis": analysis.content}
+
+async def aggregate_analysis_node_first(state: ResearchState):
+    logger.info("---AGGREGATING ALL ANALYSES---")
+    user_question = state["user_question"]
+    yahoo_finance_analysis = state.get("yahoo_finance_analysis", "")
+    google_finance_analysis = state.get("google_finance_analysis", "")
+
+    combined_analysis = f"""
+    User Question: {user_question}
+    
+    ur a finance expert so u will get 2 analysis one of yahoo and google so ur job is to make 
+    a report based on both and provide a combined report for the same which is based on data facts and non hallucinations
+    Yahoo Finance Analysis:
+    {yahoo_finance_analysis}
+
+    Google Finance Analysis:
+    {google_finance_analysis}
     """
     
-    loop = asyncio.get_event_loop()
-    analysis = await loop.run_in_executor(None, asyncio.run, llm.ainvoke(prompt))
-    
-    return {"analysis": analysis.content}
+    first_combined_search=await llm.ainvoke(input=combined_analysis)
+    return {"combined_analysis_1": first_combined_search}
 
-async def report_writing_node(state: ResearchState):
-    """
-    Writes a report based on the analysis.
-    
-    Args:
-        state (ResearchState): The current state of the workflow.
-        
-    Returns:
-        ResearchState: The updated state with the report.
-    """
-    print("---WRITING REPORT---")
-    analysis = state["analysis"]
-    
-    model = Model()
-    llm = model.set_model()
-    
-    prompt = f"""Based on the following analysis, write a detailed report.
+async def aggregate_analysis_node_second(state: ResearchState):
+    logger.info("---AGGREGATING ALL ANALYSES---")
+    bing_analysis = state.get("bing_analysis", "")
+    reddit_analysis = state.get("reddit_analysis", "")
+    combined_analysis = f"""
 
-    Analysis:
-    {analysis}
+    Bing Search Analysis:
+    {bing_analysis}
 
-    The report should be well-structured and easy to read.
+    Reddit Comments Analysis:
+    {reddit_analysis}
     """
+
+    second_combined_search=await llm.ainvoke(input=combined_analysis)
+    return {"combined_analysis_2": second_combined_search}
+
+async def synthesize_report_node(state: ResearchState):
+    logger.info("---SYNTHESIZING REPORT---")
+    user_question = state["user_question"]
     
-    loop = asyncio.get_event_loop()
-    report = await loop.run_in_executor(None, asyncio.run, llm.ainvoke(prompt))
-    
-    return {"report": report.content}
+    # Get the two separate analyses from the state
+    analysis_1 = state.get("combined_analysis_1", "")
+    analysis_2 = state.get("combined_analysis_2", "")
+
+    prompt = f"""Based on the following combined analysis for the query: {user_question}, synthesize a comprehensive report.
+
+    Combined Financial Analysis:
+    {analysis_1}
+
+    Combined Web/Social Analysis:
+    {analysis_2}
+
+    The report should be well-structured, insightful, and address the user's question thoroughly.
+    """
+    synthesized_report = await llm.ainvoke(prompt)
+    return {"synthesized_answer": synthesized_report.content}
+
+async def synthesized_report_analysis_node(state: ResearchState):
+    logger.info("---ANALYZING SYNTHESIZED REPORT---")
+    user_question = state["user_question"]
+    synthesized_answer = state["synthesized_answer"]
+    prompt = f"""Analyze the following synthesized report for the query: {user_question}.
+
+    Synthesized Report:
+    {synthesized_answer}
+
+    Provide a critical analysis of the report, highlighting its strengths, weaknesses, and any areas that could be improved or further investigated.
+    """
+    analysis = await llm.ainvoke(prompt)
+    return {"report": analysis.content} 
+
+async def major_highlights_node(state: ResearchState):
+    logger.info("---EXTRACTING MAJOR HIGHLIGHTS---")
+    synthesized_answer = state["synthesized_answer"]
+    prompt = f"""From the following synthesized report, extract the major highlights and key takeaways.
+
+    Synthesized Report:
+    {synthesized_answer}
+
+    Provide a concise list of the most important points.
+    """
+    highlights = await llm.ainvoke(prompt)
+    return {"major_highlights": highlights.content}
+
+async def final_report_node(state: ResearchState):
+    logger.info("---GENERATING FINAL REPORT---")
+    user_question = state["user_question"]
+    synthesized_answer = state["synthesized_answer"]
+    report_analysis = state.get("report", "") 
+    major_highlights = state.get("major_highlights", "")
+
+    final_report_content = f"""
+    # Research Report for: {user_question}
+
+    ## Synthesized Answer:
+    {synthesized_answer}
+
+    ## Major Highlights:
+    {major_highlights}
+
+    ## Report Analysis:
+    {report_analysis}
+
+    ---
+    This report was generated by an AI research agent.
+    """
+    return {"final_report": final_report_content}
